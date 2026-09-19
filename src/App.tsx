@@ -31,7 +31,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import Vapi from "@vapi-ai/web";
 import { Role, Message, WizardResult, ConnectionStep, Microcontroller, SensorModule } from "./types";
-
+import { ggufEngine } from "./services/ggufService";
 // Resistor Color Guide helpers
 const DIGIT_COLORS: { [key: string]: { num: number; hex: string; text: string; lightDot?: boolean } } = {
   black: { num: 0, hex: "#111111", text: "Black (0)" },
