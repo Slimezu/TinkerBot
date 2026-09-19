@@ -1,0 +1,10 @@
+{
+  "name": "TinkerBot ATL AI",
+  "description": "An expert AI hardware and code troubleshooter for Atal Tinkering Lab (ATL) microcontrollers, sensors, and IoT protocols. Created by Mohammad Daniyal Ahmad and Ridith Shetty.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

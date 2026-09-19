@@ -1,11 +1,40 @@
-<div align="center">
+# TinkerBot ATL AI
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+An AI hardware and circuit troubleshooting laboratory assistant for Atal Tinkering Labs (ATL), microcontrollers (Arduino, ESP32, Raspberry Pi, Pico, micro:bit), sensors, and IoT protocols.
 
-  <h1>Built with AI Studio</h2>
+**Created by Mohammad Daniyal Ahmad and Ridith Shetty**
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+---
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Deploying on Render
 
-</div>
+### Service Type: **Web Service**
+
+- **Runtime:** `Node`
+- **Build Command:** `npm install && npm run build`
+- **Start Command:** `npm run start`
+
+### Environment Variables
+In your Render Dashboard (**Settings -> Environment Variables**), add:
+
+- `Groq_key` = `your_groq_api_key_here` (or `GROQ_API_KEY`)
+- `NODE_ENV` = `production`
+- `PORT` = `3000` (Render will also automatically assign `PORT`)
+
+---
+
+## Local Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run dev server
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm run start
+```
