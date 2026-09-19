@@ -18,60 +18,48 @@ export const PRESET_GGUF_MODELS: GGUFModelOption[] = [
     file: "Slack.gguf",
     quant: "imatrix",
     size: "1.46 GB",
-    description: "Specialized edge reasoning & code troubleshooting model (slimezu/Slack) executing in browser WebAssembly memory."
+    description:
+      "Slack GGUF running locally in the browser through WebAssembly."
   }
 ];
 
-export type ModelLoadStatus = "idle" | "downloading" | "loading" | "ready" | "error";
-
-export interface ServerGgufStatus {
-  exists: boolean;
-  isComplete: boolean;
-  status: "not_started" | "downloading" | "ready" | "error";
-  percent: number;
-  speed: string;
-  etaSeconds: number;
-  size: number;
-  targetSize: number;
-}
+export type ModelLoadStatus =
+  | "idle"
+  | "downloading"
+  | "loading"
+  | "ready"
+  | "error";
 
 class LocalGGUFEngine {
   private wllama: Wllama | null = null;
   private initPromise: Promise<boolean> | null = null;
-  private currentModelId: string | null = null;
+
   public status: ModelLoadStatus = "idle";
-  public downloadProgress: number = 0;
-  public statusMessage: string = "";
+  public downloadProgress = 0;
+  public statusMessage = "";
+
+  private readonly MODEL_URL =
+    "https://huggingface.co/slimezu/Slack/resolve/main/Slack.gguf";
 
   public isReady(): boolean {
-    return this.status === "ready" && this.wllama !== null && this.wllama.isModelLoaded();
-  }
-
-  public async checkServerStatus(): Promise<ServerGgufStatus | null> {
-    try {
-      const res = await fetch("/api/gguf-status");
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  public async triggerServerDownload(): Promise<void> {
-    try {
-      await fetch("/api/start-gguf-download", { method: "POST" });
-    } catch (_) {}
+    return (
+      this.status === "ready" &&
+      this.wllama !== null &&
+      this.wllama.isModelLoaded()
+    );
   }
 
   private async getOrCreateWllama(): Promise<Wllama> {
     if (this.wllama) {
       return this.wllama;
     }
+
     this.wllama = new Wllama({
       default: "/wllama.wasm",
       "single-thread/wllama.wasm": "/wllama.wasm",
-      "multi-thread/wllama.wasm": "/wllama.wasm",
+      "multi-thread/wllama.wasm": "/wllama.wasm"
     });
+
     return this.wllama;
   }
 
@@ -79,7 +67,6 @@ class LocalGGUFEngine {
     model: GGUFModelOption = PRESET_GGUF_MODELS[0],
     onProgress?: (progress: number, message: string) => void
   ): Promise<boolean> {
-    // If an initialization is already ongoing, reuse the promise to prevent duplicate init race conditions
     if (this.initPromise) {
       return this.initPromise;
     }
@@ -87,54 +74,85 @@ class LocalGGUFEngine {
     this.initPromise = (async () => {
       try {
         if (this.isReady()) {
-          onProgress?.(100, "Slack GGUF is already loaded in WebAssembly RAM.");
+          onProgress?.(
+            100,
+            "Slack GGUF is already loaded in WebAssembly memory."
+          );
           return true;
         }
 
         this.status = "loading";
-        this.statusMessage = "Initializing WebAssembly runtime...";
-        onProgress?.(10, this.statusMessage);
+        this.statusMessage = "Initializing WebAssembly...";
+        onProgress?.(5, this.statusMessage);
 
         const instance = await this.getOrCreateWllama();
 
-        // If instance already has a model loaded, verify
         if (instance.isModelLoaded()) {
           this.status = "ready";
-          this.currentModelId = model.id;
-          this.statusMessage = "Active: Slack GGUF (Local WebAssembly Engine)";
+          this.statusMessage = "Slack GGUF is ready.";
           onProgress?.(100, this.statusMessage);
           return true;
         }
 
-        const progressCallback = ({ loaded, total }: { loaded: number; total: number }) => {
-          const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-          this.downloadProgress = pct;
-          this.statusMessage = `Reading ./Slack.gguf from disk into WebAssembly RAM (${pct}% - ${(loaded / (1024 * 1024)).toFixed(1)}MB / ${(total / (1024 * 1024)).toFixed(1)}MB)...`;
-          onProgress?.(pct, this.statusMessage);
+        this.status = "downloading";
+        this.statusMessage = "Downloading Slack GGUF from Hugging Face...";
+        onProgress?.(10, this.statusMessage);
+
+        const progressCallback = ({
+          loaded,
+          total
+        }: {
+          loaded: number;
+          total: number;
+        }) => {
+          const percent =
+            total > 0 ? Math.round((loaded / total) * 100) : 0;
+
+          this.downloadProgress = percent;
+          this.statusMessage =
+            `Downloading Slack.gguf: ${percent}% ` +
+            `(${(loaded / 1024 / 1024).toFixed(0)} MB / ` +
+            `${(total / 1024 / 1024).toFixed(0)} MB)`;
+
+          onProgress?.(percent, this.statusMessage);
         };
 
-        this.statusMessage = "Loading local ./Slack.gguf weights into WebAssembly memory...";
+        this.status = "loading";
+        this.statusMessage = "Loading Slack GGUF into WebAssembly memory...";
         onProgress?.(15, this.statusMessage);
 
-        // Load strictly from local endpoint /Slack.gguf (served directly from disk)
-        await instance.loadModelFromUrl("/Slack.gguf", {
+        await instance.loadModelFromUrl(this.MODEL_URL, {
           progressCallback,
+
+          // Context window
           n_ctx: 1024,
+
+          // Browser CPU threads
           n_threads: 2,
-          n_batch: 256,
+
+          // Batch size
+          n_batch: 256
         });
 
         this.status = "ready";
-        this.currentModelId = model.id;
-        this.statusMessage = "Active: Slack GGUF (Local WebAssembly Engine)";
+        this.statusMessage =
+          "Active: Slack GGUF (local WebAssembly engine)";
+
         onProgress?.(100, this.statusMessage);
+
         return true;
       } catch (err: any) {
-        console.error("Failed to load local Slack GGUF model:", err);
+        console.error("Failed to load Slack GGUF:", err);
+
         this.status = "error";
-        const errMsg = err?.message || String(err);
-        this.statusMessage = `Local Slack.gguf error: ${errMsg}`;
+
+        const message = err?.message || String(err);
+
+        this.statusMessage =
+          `Slack GGUF failed to load: ${message}`;
+
         onProgress?.(0, this.statusMessage);
+
         return false;
       } finally {
         this.initPromise = null;
@@ -145,36 +163,44 @@ class LocalGGUFEngine {
   }
 
   public async generateChatCompletion(
-    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+    messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: string;
+    }>,
     onToken?: (token: string) => void
   ): Promise<string> {
     if (!this.wllama || !this.wllama.isModelLoaded()) {
-      throw new Error("GGUF Model is not loaded into memory yet. Please initialize the model first.");
+      throw new Error(
+        "Slack GGUF is not loaded. Initialize the model first."
+      );
     }
 
     try {
-      let accumulated = "";
-
       const response = await this.wllama.createChatCompletion({
-        messages: messages.map(m => ({
-          role: m.role,
-          content: m.content
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content
         })),
+
         max_tokens: 512,
         temperature: 0.3,
         stream: false
       });
 
-      if (response && response.choices && response.choices[0]?.message?.content) {
-        accumulated = response.choices[0].message.content;
-        onToken?.(accumulated);
-        return accumulated;
+      const result =
+        response?.choices?.[0]?.message?.content?.trim() || "";
+
+      if (result) {
+        onToken?.(result);
       }
 
-      return accumulated || "No response generated by local GGUF model.";
+      return result || "No response generated by Slack GGUF.";
     } catch (err: any) {
-      console.error("GGUF inference error:", err);
-      throw new Error(`Local GGUF Inference Error: ${err.message || err}`);
+      console.error("Slack GGUF inference error:", err);
+
+      throw new Error(
+        `Slack GGUF inference error: ${err?.message || err}`
+      );
     }
   }
 
@@ -183,12 +209,12 @@ class LocalGGUFEngine {
       try {
         await this.wllama.exit();
       } catch (_) {}
-      this.wllama = null;
     }
+
+    this.wllama = null;
     this.status = "idle";
-    this.currentModelId = null;
-    this.statusMessage = "";
     this.downloadProgress = 0;
+    this.statusMessage = "";
   }
 }
 
