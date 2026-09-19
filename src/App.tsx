@@ -449,54 +449,114 @@ export default function App() {
   };
 
   // Chat message sender
-  const sendMessage = async (overrideText?: string) => {
-    const textToSend = (overrideText || inputVal).trim();
-    if (!textToSend || isSending) return;
+const sendMessage = async (overrideText?: string) => {
+  const textToSend = (overrideText || inputVal).trim();
 
-    if (!overrideText) {
-      setInputVal("");
-    }
+  if (!textToSend || isSending) return;
 
-    const newUserMsg: Message = {
-      id: `usr-${Date.now()}`,
-      role: "user",
-      content: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
+  if (!overrideText) {
+    setInputVal("");
+  }
 
-    const updatedMessages = [...messages, newUserMsg];
-    setMessages(updatedMessages);
-    setIsSending(true);
-
-    // Use fast direct server mentor API
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages })
-      });
-      const data = await response.json();
-      const replyText = data.text || "TinkerBot is ready to assist your ATL project!";
-      const botMsg: Message = {
-        id: `bot-${Date.now()}`,
-        role: "assistant",
-        content: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages(prev => [...prev, botMsg]);
-    } catch (err: any) {
-      const notReadyMsg: Message = {
-        id: `info-${Date.now()}`,
-        role: "assistant",
-        content: `⚠️ Could not reach chat server. Please retry in a moment.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages(prev => [...prev, notReadyMsg]);
-    } finally {
-      setIsSending(false);
-    }
+  const newUserMsg: Message = {
+    id: `usr-${Date.now()}`,
+    role: "user",
+    content: textToSend,
+    timestamp: new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    })
   };
 
+  const updatedMessages = [...messages, newUserMsg];
+
+  setMessages(updatedMessages);
+  setIsSending(true);
+
+  try {
+    // Initialize Slack GGUF if it has not been loaded yet.
+    if (!ggufEngine.isReady()) {
+      const loaded = await ggufEngine.initEngine(
+        undefined,
+        (progress, status) => {
+          console.log(
+            `[Slack GGUF] ${progress}% - ${status}`
+          );
+        }
+      );
+
+      if (!loaded) {
+        throw new Error(
+          "Slack GGUF could not be loaded."
+        );
+      }
+    }
+
+    // Convert TinkerBot's messages into the GGUF chat format.
+    const chatMessages = [
+      {
+        role: "system" as const,
+        content:
+          "You are TinkerBot, an expert AI mentor for Atal Tinkering Lab (ATL). " +
+          "You were created by Mohammad Daniyal Ahmad and Ridith Shetty. " +
+          "Help students and makers troubleshoot Arduino, ESP32, Raspberry Pi, " +
+          "circuits, sensors, electronics and code. " +
+          "Give clear, technically accurate, step-by-step answers. " +
+          "Do not unnecessarily repeat the user's question."
+      },
+
+      ...updatedMessages
+        .filter(
+          (message) =>
+            message.role === "user" ||
+            message.role === "assistant"
+        )
+        .map((message) => ({
+          role: message.role as "user" | "assistant",
+          content: message.content
+        }))
+    ];
+
+    // Run inference directly inside the browser.
+    const replyText =
+      await ggufEngine.generateChatCompletion(
+        chatMessages
+      );
+
+    const botMsg: Message = {
+      id: `bot-${Date.now()}`,
+      role: "assistant",
+      content:
+        replyText ||
+        "Slack GGUF generated no response.",
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    };
+
+    setMessages((prev) => [...prev, botMsg]);
+  } catch (err: any) {
+    console.error("TinkerBot GGUF error:", err);
+
+    const errorMsg: Message = {
+      id: `error-${Date.now()}`,
+      role: "assistant",
+      content:
+        `⚠️ Slack GGUF failed to run.\n\n` +
+        `${err?.message || "Unknown GGUF error"}\n\n` +
+        `Make sure your browser has enough available memory for the 1.46 GB model.`,
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    };
+
+    setMessages((prev) => [...prev, errorMsg]);
+  } finally {
+    setIsSending(false);
+  }
+};
   // Run the Wizard Generator Route
   const generateWizard = async () => {
     setWizardLoading(true);
